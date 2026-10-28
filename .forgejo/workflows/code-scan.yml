@@ -9,4 +9,4 @@ on:
 
 jobs:
   scan:
-    uses: http://lenovo.local:3000/justdoGIT/ci-templates/.forgejo/workflows/reusable-code-scan.yml@b7013dd3a921c56dc5409cd1b7832b5b97aa379c
+    uses: http://lenovo.local:3000/justdoGIT/ci-templates/.forgejo/workflows/reusable-code-scan.yml@d6783383d1d566ff6ea0b803a869bb5766e81c78
