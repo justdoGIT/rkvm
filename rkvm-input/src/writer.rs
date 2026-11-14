@@ -1,11 +1,13 @@
 use libc::c_int;
 
 use crate::abs::{AbsAxis, AbsEvent, AbsInfo};
+use crate::bus::BusType;
 use crate::convert::Convert;
 use crate::evdev::Evdev;
 use crate::event::Event;
 use crate::glue::{self, input_absinfo};
 use crate::key::{Key, KeyEvent};
+use crate::property::Property;
 use crate::rel::{RelAxis, RelEvent};
 use crate::uinput::Uinput;
 
@@ -20,8 +22,8 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub fn builder() -> Result<WriterBuilder, Error> {
-        WriterBuilder::new()
+    pub fn builder(bus_type: BusType) -> Result<WriterBuilder, Error> {
+        WriterBuilder::new(bus_type)
     }
 
     pub async fn write(&mut self, event: &Event) -> Result<(), Error> {
@@ -102,11 +104,20 @@ pub struct WriterBuilder {
 }
 
 impl WriterBuilder {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(bus_type: BusType) -> Result<Self, Error> {
         let evdev = Evdev::new()?;
 
+        let raw = match bus_type.to_raw() {
+            Some(raw) => raw,
+            // This kernel's headers don't know this bus, so it has no number to set.
+            None => {
+                tracing::warn!("Unsupported bus type {:?}, using virtual", bus_type);
+                glue::BUS_VIRTUAL as _
+            }
+        };
+
         unsafe {
-            glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_VIRTUAL as _);
+            glue::libevdev_set_id_bustype(evdev.as_ptr(), raw as _);
         }
 
         Ok(Self { evdev })
@@ -159,6 +170,23 @@ impl WriterBuilder {
                     ptr::null(),
                 )
             };
+
+            if ret < 0 {
+                return Err(Error::from_raw_os_error(-ret));
+            }
+        }
+
+        Ok(self)
+    }
+
+    pub fn property<T: IntoIterator<Item = Property>>(self, items: T) -> Result<Self, Error> {
+        for property in items {
+            let property = match property.to_raw() {
+                Some(property) => property,
+                None => continue,
+            };
+
+            let ret = unsafe { glue::libevdev_enable_property(self.evdev.as_ptr(), property as _) };
 
             if ret < 0 {
                 return Err(Error::from_raw_os_error(-ret));
