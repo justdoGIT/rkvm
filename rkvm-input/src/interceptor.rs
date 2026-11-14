@@ -1,8 +1,9 @@
 mod caps;
 
-pub use caps::{AbsCaps, KeyCaps, RelCaps, Repeat};
+pub use caps::{AbsCaps, KeyCaps, PropertyCaps, RelCaps, Repeat};
 
 use crate::abs::{AbsAxis, AbsEvent, ToolType};
+use crate::bus::BusType;
 use crate::convert::Convert;
 use crate::evdev::Evdev;
 use crate::event::Event;
@@ -24,6 +25,7 @@ use thiserror::Error;
 pub struct Interceptor {
     evdev: Evdev,
     writer: Writer,
+    bus_type: BusType,
     // The state of `read` is stored here to make it cancel safe.
     events: VecDeque<Event>,
     writing: Option<(u16, u16, i32)>,
@@ -125,16 +127,24 @@ impl Interceptor {
         unsafe { glue::libevdev_get_id_version(self.evdev.as_ptr()) as _ }
     }
 
-    pub fn rel(&self) -> RelCaps {
+    pub fn bus_type(&self) -> BusType {
+        self.bus_type
+    }
+
+    pub fn rel(&self) -> RelCaps<'_> {
         RelCaps::new(self)
     }
 
-    pub fn abs(&self) -> AbsCaps {
+    pub fn abs(&self) -> AbsCaps<'_> {
         AbsCaps::new(self)
     }
 
-    pub fn key(&self) -> KeyCaps {
+    pub fn key(&self) -> KeyCaps<'_> {
         KeyCaps::new(self)
+    }
+
+    pub fn property(&self) -> PropertyCaps<'_> {
+        PropertyCaps::new(self)
     }
 
     pub fn repeat(&self) -> Repeat {
@@ -183,6 +193,13 @@ impl Interceptor {
     #[tracing::instrument(skip(registry))]
     pub(crate) async fn open(path: &Path, registry: &Registry) -> Result<Self, OpenError> {
         let evdev = Evdev::open(path).await?;
+
+        // Reject the device before creating a clone of it, so that we don't have to destroy one.
+        let bus_type = unsafe { glue::libevdev_get_id_bustype(evdev.as_ptr()) } as u16;
+        let Some(bus_type) = BusType::from_raw(bus_type) else {
+            return Err(OpenError::BusType(bus_type));
+        };
+
         let metadata = evdev.file().unwrap().get_ref().metadata()?;
 
         let reader_handle = registry
@@ -213,9 +230,9 @@ impl Interceptor {
 
             if (min != 0 || max != 0) && max < min {
                 tracing::warn!(
-                    min = %min,
-                    max = max,
-                    axis = i,
+                    %min,
+                    %max,
+                    axis = %i,
                     "Detected nonsense min and max values for absolute axis, disabling it",
                 );
 
@@ -226,10 +243,6 @@ impl Interceptor {
                     return Err(Error::from_raw_os_error(-ret).into());
                 }
             }
-        }
-
-        unsafe {
-            glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_VIRTUAL as _);
         }
 
         let ret =
@@ -263,6 +276,7 @@ impl Interceptor {
         Ok(Self {
             evdev,
             writer,
+            bus_type,
             events: VecDeque::new(),
             dropped: false,
             writing: None,
@@ -279,6 +293,8 @@ unsafe impl Send for Interceptor {}
 pub(crate) enum OpenError {
     #[error("Not appliable")]
     NotAppliable,
+    #[error("Unknown bus type {0:#x}")]
+    BusType(u16),
     #[error(transparent)]
     Io(#[from] Error),
 }

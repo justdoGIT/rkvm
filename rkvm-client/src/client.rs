@@ -6,12 +6,13 @@ use rkvm_net::{Pong, Update};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io;
+use std::net::IpAddr;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::TcpStream;
 use tokio::time;
-use tokio_rustls::rustls::ServerName;
+use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::TlsConnector;
 
 #[derive(Error, Debug)]
@@ -27,7 +28,7 @@ pub enum Error {
 }
 
 pub async fn run(
-    hostname: &ServerName,
+    hostname: &ServerName<'static>,
     port: u16,
     connector: TlsConnector,
     password: &str,
@@ -35,7 +36,7 @@ pub async fn run(
     // Intentionally don't impose any timeout for TCP connect.
     let stream = match hostname {
         ServerName::DnsName(name) => TcpStream::connect(&(name.as_ref(), port)).await,
-        ServerName::IpAddress(address) => TcpStream::connect(&(*address, port)).await,
+        ServerName::IpAddress(address) => TcpStream::connect(&(IpAddr::from(*address), port)).await,
         _ => unimplemented!("Unhandled rustls ServerName variant: {:?}", hostname),
     }
     .map_err(Error::Network)?;
@@ -117,12 +118,14 @@ pub async fn run(
             Update::CreateDevice {
                 id,
                 name,
+                bus_type,
                 vendor,
                 product,
                 version,
                 rel,
                 abs,
                 keys,
+                properties,
                 delay,
                 period,
             } => {
@@ -135,7 +138,7 @@ pub async fn run(
                 }
 
                 let writer = async {
-                    Writer::builder()?
+                    Writer::builder(bus_type)?
                         .name(&name)
                         .vendor(vendor)
                         .product(product)
@@ -143,6 +146,7 @@ pub async fn run(
                         .rel(rel)?
                         .abs(abs)?
                         .key(keys)?
+                        .property(properties)?
                         .delay(delay)?
                         .period(period)?
                         .build()
@@ -154,11 +158,11 @@ pub async fn run(
                 entry.or_insert(writer);
 
                 tracing::info!(
-                    id = %id,
-                    name = ?name,
-                    vendor = %vendor,
-                    product = %product,
-                    version = %version,
+                    %id,
+                    ?name,
+                    %vendor,
+                    %product,
+                    %version,
                     "Created new device"
                 );
             }
@@ -170,7 +174,7 @@ pub async fn run(
                     )));
                 }
 
-                tracing::info!(id = %id, "Destroyed device");
+                tracing::info!(%id, "Destroyed device");
             }
             Update::Event { id, event } => {
                 let writer = writers.get_mut(&id).ok_or_else(|| {
@@ -182,11 +186,11 @@ pub async fn run(
 
                 writer.write(&event).await.map_err(Error::Input)?;
 
-                tracing::trace!(id = %id, "Wrote an event to device");
+                tracing::trace!(%id, "Wrote an event to device");
             }
             Update::Ping => {
                 let duration = start.elapsed();
-                tracing::debug!(duration = ?duration, "Received ping");
+                tracing::debug!(?duration, "Received ping");
 
                 start = Instant::now();
                 interval.reset();
@@ -201,7 +205,7 @@ pub async fn run(
                 .map_err(Error::Network)?;
 
                 let duration = start.elapsed();
-                tracing::debug!(duration = ?duration, "Sent pong");
+                tracing::debug!(?duration, "Sent pong");
             }
         }
     }
