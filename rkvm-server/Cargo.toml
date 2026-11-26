@@ -1,7 +1,8 @@
 [package]
 name = "rkvm-server"
+description = "Keyboard and mouse sharing across Linux machines (server)"
 license = "MIT"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Jan Trefil <8711792+htrefil@users.noreply.github.com>"]
 edition = "2021"
 
@@ -30,3 +31,4 @@ buildflags = ["--release"]
 
 [package.metadata.rpm.targets]
 server = { path = "/usr/bin/rkvm-server" }
+

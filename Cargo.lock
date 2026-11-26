@@ -640,9 +640,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.189"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libloading"
@@ -873,10 +873,11 @@ dependencies = [
 
 [[package]]
 name = "rkvm-client"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "clap",
  "env_logger",
+ "libc",
  "rkvm-input",
  "rkvm-net",
  "serde",
@@ -887,6 +888,10 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "rkvm-deb"
+version = "0.7.1"
 
 [[package]]
 name = "rkvm-input"
@@ -922,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "rkvm-server"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "clap",
  "env_logger",
