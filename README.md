@@ -15,6 +15,12 @@ Switching between different clients is done by a configurable keyboard shortcut.
 - The uinput Linux kernel module, enabled by default in most distros. You can confirm that it's enabled in your distro by checking that `/dev/uinput` exists.
 - libevdev development files (`sudo apt install libevdev-dev` on Debian/Ubuntu)
 - Clang/LLVM (`sudo apt install clang` on Debian/Ubuntu)
+- Optionally, for the client's USB output mode: a USB device (OTG) controller, configfs mounted at `/sys/kernel/config` and the libcomposite kernel module loaded (`modprobe libcomposite`).
+
+## USB output mode
+Instead of creating virtual input devices on the client machine, the client can act as a USB keyboard and mouse for the machine its USB device port is plugged into. This lets a small board (e.g. a Raspberry Pi) control any computer, regardless of its OS, including its BIOS/UEFI. Enable it by setting `mode = "usb"` in the `[output]` table of the client config (see `example/client.toml`).
+
+Limitations: only keyboard keys, the 5 standard mouse buttons, relative motion and scroll wheels are forwarded. Absolute devices (touchpads, tablets, touchscreens) and media keys are ignored.
 
 ## Manual installation
 If you can, it is strongly recommended to use the [AUR package](https://aur.archlinux.org/packages/rkvm) to install rkvm.  
@@ -29,12 +35,23 @@ $ cargo build --release
 # cp systemd/rkvm-server.service /usr/lib/systemd/system/
 ```
 
+## Debian/Ubuntu packages
+Debian packages can be built with [cargo-deb](https://github.com/kornelski/cargo-deb):
+```
+$ cargo install cargo-deb
+$ cargo deb -p rkvm-deb
+# apt install ./target/debian/rkvm_*.deb
+```
+This produces a single `rkvm` package containing the server, client and certificate generator.
+The services are not enabled or started on install. Configure them first (see below).
+
 ## Configuration
 After installation:
 - Generate a certificate and private key using the `rkvm-certificate-gen` tool or provide your own from other sources.
 - For server, place both the certificate and private key in `/etc/rkvm/certificate.pem` and `/etc/rkvm/key.pem` respectively.
 - For client, place the certificate to `/etc/rkvm/certificate.pem`.
-- Create a config if you haven't done so already.  
+- Alternatively, TLS can be disabled by removing `certificate` and `key` from the server config and `certificate` from all client configs. Both ends have to agree, and all traffic including every keystroke is then sent unencrypted, so only do this on a network you trust.
+- Create a config if you haven't done so already. The Debian package installs both configs in `/etc/rkvm`, so you can skip this step.  
   Server:  
   ```
   # cp /usr/share/rkvm/examples/server.toml /etc/rkvm/server.toml

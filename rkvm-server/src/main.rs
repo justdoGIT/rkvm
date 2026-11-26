@@ -8,6 +8,7 @@ use std::future;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
+use tokio::signal::unix::{self, SignalKind};
 use tokio::{fs, signal, time};
 use tracing::subscriber;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
@@ -52,10 +53,28 @@ async fn main() -> ExitCode {
         }
     };
 
-    let acceptor = match tls::configure(&config.certificate, &config.key).await {
-        Ok(acceptor) => acceptor,
+    let acceptor = match (&config.certificate, &config.key) {
+        (Some(certificate), Some(key)) => match tls::configure(certificate, key).await {
+            Ok(acceptor) => Some(acceptor),
+            Err(err) => {
+                tracing::error!("Error configuring TLS: {}", err);
+                return ExitCode::FAILURE;
+            }
+        },
+        (None, None) => {
+            tracing::warn!("TLS is disabled, all traffic including keystrokes is sent unencrypted");
+            None
+        }
+        _ => {
+            tracing::error!("Error configuring TLS: certificate and key must be set together");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut terminate = match unix::signal(SignalKind::terminate()) {
+        Ok(terminate) => terminate,
         Err(err) => {
-            tracing::error!("Error configuring TLS: {}", err);
+            tracing::error!("Error setting up signal handler: {}", err);
             return ExitCode::FAILURE;
         }
     };
@@ -72,12 +91,14 @@ async fn main() -> ExitCode {
 
     tokio::select! {
         result = server::run(config.listen, acceptor, &config.password, &switch_keys, propagate_switch_keys) => {
-            if let Err(err) = result {
-                tracing::error!("Error: {}", err);
-                return ExitCode::FAILURE;
-            }
+            let Err(err) = result;
+            tracing::error!("Error: {}", err);
+
+            return ExitCode::FAILURE;
         }
-        // This is needed to properly clean libevdev stuff up.
+        _ = terminate.recv() => {
+            tracing::info!("Exiting on signal");
+        }
         result = signal::ctrl_c() => {
             if let Err(err) = result {
                 tracing::error!("Error setting up signal handler: {}", err);
